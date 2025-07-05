@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-honey-beer-app
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Honey-beer-application/honey-beer-deployment.git
+    targetRevision: HEAD
+    path: deployment
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: honey-beer
+  
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+
+    automated:
+      selfHeal: true
+      prune: true
