@@ -1,0 +1,557 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: honey-beer
+  labels:
+    name: honey-beer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: honey-beer
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: grafana
+  name: grafana
+  namespace: honey-beer
+spec:
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+      namespace: honey-beer
+    spec:
+      securityContext:
+        fsGroup: 472
+        supplementalGroups:
+          - 0
+      containers:
+        - name: grafana
+          image: stefanveljkovic/honey-beer-grafana:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http-grafana
+              protocol: TCP
+            - containerPort: 54526
+              name: http-collector
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /robots.txt
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 2
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 3000
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 250m
+              memory: 750Mi
+          volumeMounts:
+            - mountPath: /var/lib/grafana
+              name: grafana-pv
+      volumes:
+        - name: grafana-pv
+          persistentVolumeClaim:
+            claimName: grafana-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: honey-beer
+spec:
+  ports:
+    - port: 3000
+      name: http-grafana
+      protocol: TCP
+      targetPort: http-grafana
+    - port: 54526
+      name: http-collector
+      protocol: TCP
+      targetPort: http-collector
+  selector:
+    app: grafana
+  sessionAffinity: None
+  type: LoadBalancer
+
+---
+# Opentelemetry collector
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector-deployment
+  namespace: honey-beer
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 120
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+      namespace: honey-beer
+    spec:
+      containers:
+      - name: opentelemetry-collector
+        image: stefanveljkovic/honey-beer-otel-collector:v1
+        imagePullPolicy: Never
+        ports:
+          # - containerPort: 4137
+          #   name: grpc-collector
+          #   protocol: TCP
+          - containerPort: 4138
+            name: http-collector
+            protocol: TCP
+          - containerPort: 8888
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 8889
+            name: http-prometheus
+            protocol: TCP
+          - containerPort: 13133
+            name: http-status
+            protocol: TCP
+          # - containerPort: 53
+          #   name: otlp-receiver
+          #   protocol: TCP
+          - containerPort: 54526
+            name: grafana-port
+            protocol: TCP
+          - containerPort: 4317 # OTLP gRPC
+            name: otlp-grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentelemetry-collector
+  namespace: honey-beer
+spec:
+  type: ClusterIP
+  selector:
+    app: otel-collector
+  ports:
+    - port: 4317
+      name: grpc-collector
+      protocol: TCP 
+      targetPort: 4317
+    - port: 4318
+      name: http-collector
+      protocol: TCP
+      targetPort: 4318
+    - port: 8888
+      name: http-metrics
+      targetPort: 8888
+      protocol: TCP
+    - port: 8889
+      name: http-prometheus
+      targetPort: 8889
+      protocol: TCP
+    - port: 13133
+      name: http-status
+      targetPort: 13133
+      protocol: TCP
+    # - port: 53
+    #   name: otlp-receiver
+    #   targetPort: otlp-receiver
+    #   protocol: TCP
+    - port: 54526
+      name: grafana-port
+      targetPort: grafana-port
+      protocol: TCP
+      # By default and for convenience, the `targetPort` is set to
+      # the same value as the `port` field.
+      # targetPort: 3200
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane
+      # will allocate a port from a range (default: 30000-32767)
+      # nodePort: 30007
+---
+# Tempo
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo-deployment
+  namespace: honey-beer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+      namespace: honey-beer
+    spec:
+      containers:
+      - name: tempo
+        image: stefanveljkovic/honey-beer-tempo:v1
+        imagePullPolicy: Never
+        ports:
+          - containerPort: 3200
+            name: http-main-tempo
+            protocol: TCP
+          - containerPort: 4137
+            name: grpc-tempo
+            protocol: TCP
+          - containerPort: 4138
+            name: http-tempo
+            protocol: TCP
+          # - containerPort: 53
+          #   name: otlp-receiver
+          #   protocol: TCP
+          # - containerPort: 9095
+          #   name: grpc-receiver
+          #   protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: honey-beer
+spec:
+  type: ClusterIP
+  selector:
+    app: tempo
+  ports:
+    - port: 3200
+      name: http-main-tempo
+      protocol: TCP
+      targetPort: 3200
+    - port: 4317
+      name: grpc-tempo
+      protocol: TCP 
+      targetPort: 4317
+    - port: 4318
+      name: http-tempo
+      protocol: TCP
+      targetPort: 4318
+    # - port: 53
+    #   name: otlp-receiver
+    #   targetPort: otlp-receiver
+    #   protocol: TCP
+    # - port: 9095
+    #   name: grpc-receiver
+    #   targetPort: grpc-receiver
+    #   protocol: TCP
+      # By default and for convenience, the `targetPort` is set to
+      # the same value as the `port` field.
+      # targetPort: 3200
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane
+      # will allocate a port from a range (default: 30000-32767)
+      # nodePort: 30007
+---
+# Loki
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: loki-statefulset
+  namespace: honey-beer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+      namespace: honey-beer
+    spec:
+      containers:
+      - name: loki
+        image: stefanveljkovic/honey-beer-loki:v1
+        imagePullPolicy: Never
+        ports:
+          - containerPort: 3100
+            name: http-loki
+            protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: honey-beer
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3100
+      protocol: TCP
+      targetPort: 3100
+      # By default and for convenience, the `targetPort` is set to
+      # the same value as the `port` field.
+      # targetPort: 3200
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane
+      # will allocate a port from a range (default: 30000-32767)
+      # nodePort: 30007
+  selector:
+    app: loki
+  sessionAffinity: None
+---
+# Prometheus
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-deployment
+  namespace: honey-beer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+      namespace: honey-beer
+    spec:
+      containers:
+      - name: prometheus
+        image: stefanveljkovic/honey-beer-prometheus:v1
+        imagePullPolicy: Never
+        ports:
+          - containerPort: 9090
+            name: http-prometheus
+            protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 9090
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 2
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 9090
+          timeoutSeconds: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: honey-beer
+spec:
+  ports:
+    - port: 9090
+      # By default and for convenience, the `targetPort` is set to
+      # the same value as the `port` field.
+      protocol: TCP
+      targetPort: 9090
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane
+      # will allocate a port from a range (default: 30000-32767)
+      # nodePort: 30007
+  selector:
+    app: prometheus
+  sessionAffinity: None
+  type: LoadBalancer
+---
+# Server (ASP .NET Core)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-deployment
+  namespace: honey-beer
+  labels:
+    app: server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: server
+  template:
+    metadata:
+      labels:
+        app: server
+      namespace: honey-beer
+    spec:
+      containers:
+      - name: server
+        image: stefanveljkovic/honey-beer-server:0.0.1
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http-server
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /swagger/index.html
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 2
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: 8080
+          timeoutSeconds: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: honey-beer
+spec:
+  ports:
+    - port: 7165
+      # By default and for convenience, the `targetPort` is set to
+      # the same value as the `port` field.
+      protocol: TCP
+      targetPort: 8080
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane
+      # will allocate a port from a range (default: 30000-32767)
+      # nodePort: 30007
+  selector:
+    app: server
+  sessionAffinity: None
+  type: LoadBalancer
+---
+# Angular
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: angular-deployment
+  namespace: honey-beer
+  labels:
+    app: angular
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: angular
+  template:
+    metadata:
+      labels:
+        app: angular
+      namespace: honey-beer
+    spec:
+      containers:
+      - name: angular
+        image: stefanveljkovic/honey-beer-frontend:0.0.1
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+          name: http-front
+          protocol: TCP
+        # readinessProbe:
+        #   failureThreshold: 3
+        #   httpGet:
+        #     path: /
+        #     port: 4200
+        #     scheme: HTTP
+        #   initialDelaySeconds: 10
+        #   periodSeconds: 30
+        #   successThreshold: 1
+        #   timeoutSeconds: 2
+        # livenessProbe:
+        #   failureThreshold: 3
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 10
+        #   successThreshold: 1
+        #   tcpSocket:
+        #     port: 4200
+        #   timeoutSeconds: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: angular
+  namespace: honey-beer
+spec:
+  ports:
+    - port: 4200
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: angular
+  sessionAffinity: None
+  type: LoadBalancer
+---
+# MSSQL database
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db-statefulset
+  namespace: honey-beer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+      namespace: honey-beer
+    spec:
+      hostname: mssqlserver
+      containers:
+      - name: db
+        image: stefanveljkovic/honey-beer-db:v1
+        imagePullPolicy: Never
+        env:
+          - name: ACCEPT_EULA
+            value: "Y"
+        ports:
+          - containerPort: 1433
+            name: http-db
+            protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mssqlserver
+  namespace: honey-beer
+spec:
+  ports:
+    - port: 1433
+      protocol: TCP
+      targetPort: 1433
+  selector:
+    app: db
+  sessionAffinity: None
+  type: LoadBalancer
