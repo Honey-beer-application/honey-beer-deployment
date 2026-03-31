@@ -6,6 +6,20 @@ metadata:
     name: honey-beer
 ---
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: grafana-manual-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /mnt/data/grafana # Ensure this folder exists on your Debian disk!
+  storageClassName: "" # Matches the empty string in the PVC
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: grafana-pvc
