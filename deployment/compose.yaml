@@ -41,7 +41,7 @@ spec:
       containers:
         - name: grafana
           image: stefanveljkovic/honey-beer-grafana:v1
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
               name: http-grafana
@@ -122,7 +122,7 @@ spec:
       containers:
       - name: opentelemetry-collector
         image: stefanveljkovic/honey-beer-otel-collector:v1
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         ports:
           # - containerPort: 4137
           #   name: grpc-collector
@@ -160,7 +160,7 @@ spec:
   ports:
     - port: 4317
       name: grpc-collector
-      protocol: TCP 
+      protocol: TCP
       targetPort: 4317
     - port: 4318
       name: http-collector
@@ -214,7 +214,7 @@ spec:
       containers:
       - name: tempo
         image: stefanveljkovic/honey-beer-tempo:v1
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         ports:
           - containerPort: 3200
             name: http-main-tempo
@@ -290,7 +290,7 @@ spec:
       containers:
       - name: loki
         image: stefanveljkovic/honey-beer-loki:v1
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         ports:
           - containerPort: 3100
             name: http-loki
@@ -338,7 +338,7 @@ spec:
       containers:
       - name: prometheus
         image: stefanveljkovic/honey-beer-prometheus:v1
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         ports:
           - containerPort: 9090
             name: http-prometheus
@@ -405,7 +405,7 @@ spec:
       containers:
       - name: server
         image: stefanveljkovic/honey-beer-server:0.0.1
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
           name: http-server
@@ -472,7 +472,7 @@ spec:
       containers:
       - name: angular
         image: stefanveljkovic/honey-beer-frontend:0.0.1
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         ports:
         - containerPort: 80
           name: http-front
@@ -532,7 +532,7 @@ spec:
       containers:
       - name: db
         image: stefanveljkovic/honey-beer-db:v1
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         env:
           - name: ACCEPT_EULA
             value: "Y"
